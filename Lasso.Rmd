@@ -1,0 +1,212 @@
+---
+title: "ExtraAssigment"
+author: "Sarah Chopra"
+date: "25/04/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r }
+
+set.seed(50)
+############Data Pull############
+dataset <- read.csv('/Users/sarah/Desktop/TRU/ML/communities.data', header=FALSE, na.strings=c("?"))
+read_as_lines <- readLines('/Users/sarah/Desktop/TRU/ML/communities.names')
+read_columns <- grep("@attribute ", read_as_lines, value = TRUE)
+names <- sapply(strsplit(read_columns, " "), "[[", 2)
+colnames(dataset) <- names
+dataset_total <- dataset[ ,6:ncol(dataset)]
+for(i in 1:ncol(dataset_total)){
+  dataset_total[is.na(dataset_total[,i]), i] <- mean(dataset_total[,i], na.rm = TRUE)
+}
+dataset_total = scale(dataset_total)
+trainDataset = dataset_total[FALSE,]
+validation_data = dataset_total[FALSE,]
+######### basic Initializations #####################
+nFold = 5
+n = nrow(dataset_total)
+bracket = n / nFold
+initalBestAlpha = 0.23
+epsilon = 0.003
+
+#Matrix used for summation
+
+final_matrix = matrix(0, nrow = 1, ncol = 3)
+final_matrix = as.data.frame(final_matrix[-1,])
+colnames(final_matrix) <- c("delta", "MSE", "Fold")
+
+# Function to evaluate Beta(i) and Beta(i + 1)
+findNonConvergingIndexes <- function(matOld, matNew) {
+
+  diffInMat = abs(matOld-matNew)
+  diffInMat_tf = diffInMat > epsilon
+  
+  index_diff =   which(diffInMat_tf, arr.ind = FALSE, useNames = TRUE)
+  as.list(index_diff)
+  
+}
+
+delta_grid <- c(0.002,0.0023,0.0003,0.1)
+###########Calcualte Aj############
+
+calculateAj <- function(mat)
+{
+  2*sum(mat**2)
+}
+
+###########Calcualte Cj############
+
+calculateCj <- function(response_mat,predictor_mat,baseBeta,j)
+{
+  Cj = 0
+  for(i in 1:nrow(response_mat))
+  {
+    Cj = Cj + (predictor_mat[i,j] * (response_mat[i,] - ((predictor_mat[i,]) %*% baseBeta) + predictor_mat[i,j] %*%baseBeta[j,]))
+  }
+  Cj = Cj * 2
+  if(is.na(Cj))
+    { Cj = 0 }
+  
+  Cj
+}
+
+
+
+############Iteration for folds######################################
+
+for (k in 1:nFold)
+{
+  
+  for( delta in delta_grid)
+    
+  {
+    
+  trainDataset = trainDataset[-c(n), ]
+  validation_data = validation_data[-c(n), ]
+  c = 0
+  startIterate = 1
+  indexLastPick = startIterate  + bracket - 1
+  validation_data = dataset_total[FALSE,]
+  
+  for (j in 1:nFold)
+{
+    indexLastPick = startIterate  + bracket - 1
+  if (j == k)
+  {
+    validation_data = dataset_total[startIterate:indexLastPick,]
+    
+  }
+  else
+  {
+    trainDataset = rbind(trainDataset, dataset_total[startIterate:indexLastPick,])
+    
+  }
+  startIterate = indexLastPick + 1
+  }
+  
+
+  response_mat = (trainDataset[,ncol(trainDataset),drop = FALSE])
+  response_mat=as.matrix(response_mat)
+  predictor_mat = (trainDataset[,-ncol(trainDataset)])
+  predictor_mat = as.matrix(predictor_mat)
+  predictor_mat = cbind(1,predictor_mat)
+  transpose_predictor_mat = t(predictor_mat)
+  mult_transpose_pred = transpose_predictor_mat %*% predictor_mat
+  mult_transpose_pred_inverse = solve(mult_transpose_pred)
+  baseBeta = mult_transpose_pred_inverse %*% transpose_predictor_mat
+  baseBeta = baseBeta %*% response_mat
+  
+  baseBeta_conv <- matrix(0,nrow=123)
+  baseBeta_conv = baseBeta
+  indexToCalculate <- seq(1, ncol(predictor_mat), by=1)
+ 
+   newBeta <- matrix(0,nrow=123)
+  
+  itr =0 
+  while(length(indexToCalculate) > 0 & itr < 20)
+  {
+    itr =  itr + 1
+
+    for(l in indexToCalculate)
+    {
+      Aj = calculateAj(predictor_mat[,l])
+      Cj = calculateCj(response_mat,predictor_mat,baseBeta_conv,l)
+      
+      if(Cj < -delta)
+      {
+        newBeta[l] = (Cj + delta)/Aj
+      }
+      
+      if(Cj > delta)
+      {
+        newBeta[l] = (Cj - delta)/Aj
+      }
+      
+      else if(Cj == delta)
+      {
+        newBeta[l] = 0
+      }
+      
+    }
+    
+    indexToCalculate = findNonConvergingIndexes(baseBeta, newBeta)
+    baseBeta_conv <- matrix(0,nrow=123)
+    baseBeta_conv = newBeta
+    
+  }
+  
+
+  predictor_mat_validation = (validation_data[,-ncol(validation_data)])
+  predictor_mat_validation = as.matrix(predictor_mat_validation)
+  predictor_mat_validation = cbind(1,predictor_mat_validation)
+  response_mat_validation = (validation_data[,ncol(validation_data),drop = FALSE])
+  response_mat_validation=as.matrix(response_mat_validation)
+  
+  yPred = predictor_mat_validation %*% baseBeta_conv
+  MSE_interim = (yPred-response_mat_validation)^2
+  MSE_interim = mean(MSE_interim)
+  pre_final = c(delta,MSE_interim,k)
+  final_matrix = rbind(final_matrix,pre_final) 
+  
+  trainDataset = dataset_total[FALSE,]
+  validation_data = dataset_total[FALSE,]
+  
+  colnames(final_matrix) <- c("delta", "MSE", "Fold")
+  
+  }
+}  
+
+#For all lambdas and MSEs
+
+```
+
+##Plot Coordinate descent Algorithm
+```{r }
+
+aggregatedOutput = aggregate((final_matrix$MSE), list(delta=final_matrix$delta), mean)
+colnames(aggregatedOutput) <- c("delta", "MSE")
+plot(log(aggregatedOutput$delta),aggregatedOutput$MSE,pch=21,col="black",bg="black")
+lines(log(aggregatedOutput$delta),aggregatedOutput$MSE, col = "gray",lwd=4)
+
+```
+##GLMNET
+
+```{r }
+library("glmnet")
+dataset <- read.csv('/Users/sarah/Desktop/TRU/ML/communities.data', header=FALSE, na.strings=c("?"))
+read_as_lines <- readLines('/Users/sarah/Desktop/TRU/ML/communities.names')
+read_columns <- grep("@attribute ", read_as_lines, value = TRUE)
+names <- sapply(strsplit(read_columns, " "), "[[", 2)
+colnames(dataset) <- names
+dataset_total <- dataset[ ,6:ncol(dataset)]
+for(i in 1:ncol(dataset_total)){
+  dataset_total[is.na(dataset_total[,i]), i] <- mean(dataset_total[,i], na.rm = TRUE)
+}
+set.seed(1)
+lambdas <- c(0.002,0.0023,0.0003,0.1)
+ridge_reg = cv.glmnet(as.matrix(dataset_total[,-123]), as.matrix(dataset_total[,123]), nlambda = 25, alpha = 1, family = 'gaussian', lambda = lambdas)
+plot(log(ridge_reg$lambda),ridge_reg$cvm,pch=21,col="black",bg="black")
+lines(log(ridge_reg$lambda),ridge_reg$cvm, col = "gray",lwd=4)
+```
